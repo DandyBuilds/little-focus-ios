@@ -1,0 +1,29 @@
+name: Prepare Windows iPhone installation tools
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download from original publishers
+        run: |
+          set -euo pipefail
+          mkdir installers
+          curl --fail --location --retry 2 'https://sideloadly.io/SideloadlySetup64.exe' -o installers/SideloadlySetup64.exe &
+          SIDELOAD_PID=$!
+          curl --fail --location --retry 2 'https://www.apple.com/itunes/download/win64' -o installers/iTunes64Setup.exe &
+          ITUNES_PID=$!
+          curl --fail --location --retry 2 'https://updates.cdn-apple.com/2020/windows/001-39935-20200911-1A70AA56-F448-11EA-8CC0-99D41950005E/iCloudSetup.exe' -o installers/iCloudSetup.exe &
+          ICLOUD_PID=$!
+          wait "$SIDELOAD_PID"
+          wait "$ITUNES_PID"
+          wait "$ICLOUD_PID"
+          (cd installers && sha256sum *.exe > SHA256.txt)
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Windows-iPhone-installers
+          path: installers/
+          retention-days: 1

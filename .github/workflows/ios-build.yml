@@ -1,0 +1,46 @@
+name: Build and test iPhone app
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Run native tests on iPhone simulator
+        run: bash verify-mac.sh
+      - name: Launch native app and capture screenshot
+        run: |
+          set -euo pipefail
+          DEVICE_ID=$(xcrun simctl list devices booted -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if "iPhone" in x["name"]))')
+          mkdir -p artifacts
+          xcrun simctl install "$DEVICE_ID" .build/Build/Products/Debug-iphonesimulator/LittleFocus.app
+          xcrun simctl launch "$DEVICE_ID" com.dandy.littlefocus
+          sleep 3
+          xcrun simctl io "$DEVICE_ID" screenshot artifacts/LittleFocus-iPhone.png
+      - name: Build physical iPhone binary
+        run: |
+          set -euo pipefail
+          xcodebuild -project LittleFocus.xcodeproj -scheme LittleFocus -configuration Release -destination 'generic/platform=iOS' -archivePath .build/LittleFocus.xcarchive archive CODE_SIGNING_ALLOWED=NO
+          mkdir -p .build/package/Payload
+          cp -R .build/LittleFocus.xcarchive/Products/Applications/LittleFocus.app .build/package/Payload/
+          (cd .build/package && zip -qry ../../artifacts/LittleFocus-unsigned.ipa Payload)
+          shasum -a 256 artifacts/LittleFocus-unsigned.ipa > artifacts/SHA256.txt
+      - name: Save iPhone package and screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: LittleFocus-iPhone
+          path: artifacts/
+          retention-days: 7
+      - name: Save test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LittleFocus-test-results
+          path: .build/Logs/Test/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
